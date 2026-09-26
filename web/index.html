@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dart Sense</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+
+<!-- ================= SETUP ================= -->
+<section id="setup" class="view">
+  <header class="topbar"><h1>Match</h1></header>
+  <main class="setup-body">
+
+    <div class="card">
+      <div class="players-head">Players <b><span id="player-count">0</span> / 8</b></div>
+      <div class="players-row">
+        <div id="player-list" class="player-list"></div>
+        <button id="add-player" class="add-player" type="button">
+          <span class="plus">+</span><span>Add player</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h9M16 6h5M14 4v4M3 12h4M11 12h10M9 10v4M3 18h11M18 18h3M16 16v4"/></svg>
+        Game settings
+      </h2>
+
+      <div class="format-row">
+        <div class="seg seg-col" data-setting="format">
+          <button data-value="best_of">Best of</button>
+          <button data-value="first_to">First to</button>
+        </div>
+        <div class="stepper">
+          <button id="target-up" type="button" aria-label="increase"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+          <span id="target">3</span>
+          <button id="target-down" type="button" aria-label="decrease"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        </div>
+        <div class="seg seg-col" data-setting="unit">
+          <button data-value="legs">Legs</button>
+          <button data-value="sets">Sets</button>
+        </div>
+      </div>
+      <p id="format-hint" class="hint"></p>
+
+      <div class="seg seg-row" data-setting="start_score">
+        <button data-value="301">301</button>
+        <button data-value="501">501</button>
+        <button data-value="701">701</button>
+        <button data-value="custom" class="custom"><small>Custom</small><input id="custom-score" type="number" min="2" max="9999" value="170"></button>
+      </div>
+
+      <div class="seg seg-row" data-setting="in_mode">
+        <button data-value="straight">Straight in</button>
+        <button data-value="double">Double in</button>
+        <button data-value="master">Master in</button>
+      </div>
+
+      <div class="seg seg-row" data-setting="out_mode">
+        <button data-value="double">Double out</button>
+        <button data-value="master">Master out</button>
+        <button data-value="straight">Straight out</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/></svg>
+        Camera
+      </h2>
+      <div class="setting-line">
+        <label for="camera-ip">IP Webcam address</label>
+        <div class="camera-input">
+          <span id="camera-status" class="dot" title="not checked"></span>
+          <input id="camera-ip" type="text" spellcheck="false">
+          <button id="camera-check" type="button" class="ghost">Test</button>
+        </div>
+      </div>
+      <div class="setting-line">
+        <label for="call-scores">Call scores out loud</label>
+        <label class="toggle"><input id="call-scores" type="checkbox" checked><span></span></label>
+      </div>
+    </div>
+  </main>
+  <footer class="start-bar">
+    <p id="setup-error" class="error"></p>
+    <button id="start-game" class="start" type="button">Start game</button>
+  </footer>
+</section>
+
+<!-- ================= GAME ================= -->
+<section id="game" class="view hidden">
+  <aside id="player-cards" class="player-cards"></aside>
+
+  <main class="centre">
+    <h2 id="turn-banner" class="turn-banner"></h2>
+
+    <form id="score-form" class="score-bar" autocomplete="off">
+      <span class="kbd-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="12" rx="2"/><path d="M6 11h1M10 11h1M14 11h1M18 11h0M7 15h10M12 7V4c0-1 1-1 2-1"/></svg></span>
+      <input id="score-input" type="text" inputmode="numeric" placeholder="Enter a score and press enter">
+      <button id="undo" type="button" class="undo" title="Undo last visit (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-2"/></svg></button>
+      <button type="submit" class="submit" title="Submit score"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 12h8M13 8l4 4-4 4"/></svg></button>
+    </form>
+
+    <div id="detected" class="detected"></div>
+    <div id="toast" class="toast hidden"></div>
+
+    <div class="history-panel">
+      <table id="history" class="history"></table>
+    </div>
+  </main>
+
+  <section id="camera-col" class="camera-col">
+    <div class="camera-box">
+      <img id="camera-img" alt="camera feed">
+      <svg id="overlay" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+      <span class="cam-badge"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg></span>
+      <span id="cam-status" class="cam-status"></span>
+    </div>
+    <div class="camera-controls">
+      <div class="seg seg-row small" id="view-mode">
+        <button data-value="imageplane" class="active">Camera</button>
+        <button data-value="boardplane">Board</button>
+      </div>
+      <button id="add-dart" type="button" class="ghost" title="Add a dart marker (A)">+ Dart</button>
+      <label class="check"><input id="show-boxes" type="checkbox"> Raw detections</label>
+    </div>
+    <p class="help">Drag a marker to correct it · select + <kbd>Del</kbd> removes it · <kbd>Enter</kbd> with an empty box commits the detected darts</p>
+  </section>
+
+  <button id="end-match" class="corner-btn top" title="End match"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 9h18M9 9v12"/></svg></button>
+  <button id="toggle-camera" class="corner-btn bottom" title="Show / hide camera"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg></button>
+</section>
+
+<dialog id="end-dialog">
+  <p>End this match and go back to setup?</p>
+  <div class="dialog-buttons">
+    <button value="cancel" class="ghost" id="end-cancel">Keep playing</button>
+    <button value="end" class="danger" id="end-confirm">End match</button>
+  </div>
+</dialog>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

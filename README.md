@@ -34,10 +34,10 @@ Example images fed into the YOLO Object Detection model. 'YOLO model prediction'
 
 
 ## Usage
-1. Run `GUI.py` to launch the app
-2. Configure your game settings. **Important: replace Webcam IP with the IP shown when you start your IP Webcam server.**<br />
+1. Run `python app.py` to launch the app. It opens in its own browser window (Chromium/Chrome if installed); use `python app.py --no-window` to just serve it at http://127.0.0.1:8765/. The original Tkinter interface is still available with `python GUI.py`.
+2. Add up to 8 players and configure the match (first to / best of, legs or sets, 301/501/701/custom, straight/double/master in and out). **Important: set the camera address to the IP shown when you start your IP Webcam server.**<br />
 ![app set up screen](images/set_up_screen.png)
-3. Enjoy your game of darts!
+3. Play. Darts are scored automatically: after three darts (or a finish/bust) the score is called, and it's recorded once the darts are pulled out. You can also type a visit total and press Enter, press Enter with an empty box to commit fewer than three detected darts (bounce-outs), undo the last visit (Ctrl+Z), and drag the dart markers on the camera view to correct them.
 
 ## Files
 A small sample of images and respective labels can be found in the `data` folder.
