@@ -86,6 +86,10 @@
         <label for="call-scores">Call scores out loud</label>
         <label class="toggle"><input id="call-scores" type="checkbox" checked><span></span></label>
       </div>
+      <div class="setting-line">
+        <label for="save-training">Save training data<small>Keeps frames of the scored visits, labelled with the final dart positions, for training the model</small></label>
+        <label class="toggle"><input id="save-training" type="checkbox"><span></span></label>
+      </div>
     </div>
   </main>
   <footer class="start-bar">
@@ -130,6 +134,7 @@
       </div>
       <button id="add-dart" type="button" class="ghost" title="Add a dart marker (A)">+ Dart</button>
       <label class="check"><input id="show-boxes" type="checkbox"> Raw detections</label>
+      <span id="training-count" class="training-count hidden"></span>
     </div>
     <p class="help">Drag a marker to correct it · select + <kbd>Del</kbd> removes it · <kbd>Enter</kbd> with an empty box commits the detected darts</p>
   </section>

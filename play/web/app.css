@@ -95,6 +95,7 @@ kbd { font-family: var(--text); font-size: 11px; background: var(--panel); borde
 .seg .custom input:focus { outline: none; }
 
 .setting-line { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 18px; font-weight: 500; }
+.setting-line label small { display: block; font-size: 13px; font-weight: 400; color: var(--ink-soft); margin-top: 2px; }
 .camera-input { display: flex; align-items: center; gap: 10px; background: var(--panel); border-radius: 16px; padding: 6px 6px 6px 16px; }
 .camera-input input { border: 0; background: transparent; font-size: 18px; width: 220px; }
 .camera-input input:focus { outline: none; }
@@ -212,6 +213,7 @@ kbd { font-family: var(--text); font-size: 11px; background: var(--panel); borde
 .cam-status.off { background: var(--orange); color: var(--ink); }
 .camera-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .check { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
+.training-count { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
 .help { margin: 0; font-size: 13px; color: var(--ink-soft); line-height: 1.6; }
 
 .corner-btn { position: fixed; right: 18px; width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; }

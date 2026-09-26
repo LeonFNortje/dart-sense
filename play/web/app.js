@@ -20,7 +20,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const DEFAULTS = {
   players: ['Player 1', 'Player 2'], format: 'first_to', unit: 'legs', target: 3,
   start_score: '501', custom: 170, in_mode: 'straight', out_mode: 'double',
-  camera: '192.168.0.8:8080', call_scores: true,
+  camera: '192.168.0.8:8080', call_scores: true, save_training: false,
 };
 let setup = { ...DEFAULTS };
 try { setup = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('dartsense-setup') || '{}') }; } catch (e) { /* storage unavailable */ }
@@ -67,6 +67,7 @@ function renderSettings() {
     + (setup.unit === 'sets' ? ' · each set is first to 3 legs' : '');
   $('#camera-ip').value = setup.camera;
   $('#call-scores').checked = setup.call_scores;
+  $('#save-training').checked = setup.save_training;
 }
 
 $('#add-player').addEventListener('click', () => {
@@ -100,6 +101,7 @@ $('#target-down').addEventListener('click', () => stepTarget(-1));
 $('#custom-score').addEventListener('input', (e) => { setup.custom = parseInt(e.target.value, 10) || 0; setup.start_score = 'custom'; saveSetup(); renderSettings(); });
 $('#camera-ip').addEventListener('input', (e) => { setup.camera = e.target.value.trim(); $('#camera-status').className = 'dot'; saveSetup(); });
 $('#call-scores').addEventListener('change', (e) => { setup.call_scores = e.target.checked; saveSetup(); });
+$('#save-training').addEventListener('change', (e) => { setup.save_training = e.target.checked; saveSetup(); });
 
 async function checkCamera() {
   const dot = $('#camera-status');
@@ -123,6 +125,7 @@ $('#start-game').addEventListener('click', async () => {
     await api('/api/start', {
       players: setup.players, start_score: startScore, target: setup.target, unit: setup.unit, format: setup.format,
       in_mode: setup.in_mode, out_mode: setup.out_mode, camera: setup.camera, call_scores: setup.call_scores,
+      save_training: setup.save_training,
     });
     showGame();
   } catch (e) {
@@ -286,8 +289,18 @@ function renderOverlay(state) {
   }
 }
 
+function renderTraining(training) {
+  const el = $('#training-count');
+  el.classList.toggle('hidden', !training);
+  if (!training) return;
+  const n = training.corrected + training.auto;
+  el.textContent = `${n} training frame${n === 1 ? '' : 's'} saved`;
+  el.title = `${training.corrected} corrected by hand, ${training.auto} as detected`;
+}
+
 function render(state) {
   current = state;
+  renderTraining(state.training);
   const game = state.game;
   if (!game) { if (!$('#game').classList.contains('hidden')) showSetup(); return; }
   if ($('#game').classList.contains('hidden')) showGame();

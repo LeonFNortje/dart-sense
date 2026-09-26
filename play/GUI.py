@@ -289,7 +289,12 @@ class GUI:
         return image
     
     def save_data(self):
-        dir = 'data/images'
+        # frames saved here can be reviewed and added to the training data (see Training in README.md)
+        darts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'training', 'data', 'darts')
+        dir = os.path.join(darts_dir, 'images', 'collected')
+        label_dir = os.path.join(darts_dir, 'labels', 'collected')
+        os.makedirs(dir, exist_ok=True)
+        os.makedirs(label_dir, exist_ok=True)
 
         # check files in dir to auto increment save file
         max_num = 0
@@ -304,7 +309,7 @@ class GUI:
         image_path = os.path.join(dir, 'dart_'+ new_num + '.jpg')
         cv2.imwrite(image_path, self.img)
         
-        label_path = os.path.join(dir.replace('images', 'labels'), 'dart_'+ new_num + '.txt')
+        label_path = os.path.join(label_dir, 'dart_'+ new_num + '.txt')
         label = ""
         # transform from boardplane back to imageplane
 

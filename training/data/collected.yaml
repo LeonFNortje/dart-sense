@@ -1,0 +1,18 @@
+# Frames saved while playing ("Save training data" in the web app, or "Save data" in play/GUI.py), after checking
+# the labels and splitting them with
+#   python prepare_data.py split collected
+# To keep the model good on other boards, add the original datasets' folders to these lists as well.
+path: darts
+train: [images/collected/train]
+val: [images/collected/val]
+test: [images/collected/test]
+
+nc: 7
+names:
+  0: 20
+  1: 3
+  2: 11
+  3: 6
+  4: dart
+  5: 9
+  6: 15

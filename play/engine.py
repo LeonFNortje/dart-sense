@@ -6,7 +6,8 @@ import numpy as np
 from ultralytics import YOLO
 
 from get_scores import GetScores
-from video_processing import LatestFrameReader, _select_device
+from training_data import TrainingRecorder
+from video_processing import WEIGHTS, LatestFrameReader, _select_device
 
 DISPLAY_SIZE = 720 # side of the square image sent to the web UI
 REPEAT_THRESHOLD = 3 # frames (of the last 5) a dart must be seen in before it counts
@@ -19,11 +20,12 @@ class DetectionEngine:
     the darts have been pulled out, and on_announce(darts) when three darts (or a finish/bust) are seen.
     """
 
-    def __init__(self, model_dir='weights.pt'):
+    def __init__(self, model_dir=WEIGHTS):
         self.model = YOLO(model_dir)
         self.device = _select_device()
         print(f'Running model on {self.device}')
         self.predict = GetScores(model_dir)
+        self.recorder = TrainingRecorder()
         self.lock = threading.RLock()
         self.frame_ready = threading.Condition()
         self.jpeg = None
@@ -58,11 +60,22 @@ class DetectionEngine:
             self.pred_queue = -np.ones((5, 3, 2))
             self.pred_queue_count = 0
             self.H = None
+            self.snapshot = None # (frame, calibration, homography) of the last frame with this visit's darts in the board
+            self.corrected = False # the user moved, added or deleted a point in this visit
+
+    def _record_visit(self):
+        # save the visit as training data, with the final (possibly corrected) dart positions as labels
+        if self.snapshot is None or not self.dart_coords:
+            return
+        square, calibration, H = self.snapshot
+        darts = self.predict.transform_to_boardplane(np.linalg.inv(H), np.array(self.dart_coords), square.shape[0])
+        self.recorder.record(square, calibration, darts, self.corrected)
 
     def commit_now(self):
         # commit the detected darts immediately, e.g. after a bounce-out; darts left in the board are then ignored
         with self.lock:
             darts = list(self.darts)
+            self._record_visit()
             self.reset_visit(wait_for_clear=True)
         self.on_visit(darts)
 
@@ -70,6 +83,7 @@ class DetectionEngine:
         with self.lock:
             if len(self.dart_coords) < 3:
                 self.dart_coords.append(np.array([0.5, 0.5]))
+                self.corrected = True
                 self._rescore()
 
     def move_point(self, kind, index, x, y):
@@ -80,17 +94,21 @@ class DetectionEngine:
                     self.dart_coords[index] = np.array([x, y])
                 elif self.H is not None:
                     self.dart_coords[index] = self.predict.transform_to_boardplane(self.H, np.array([[x, y]]), self.crop_size)[0]
+                self.corrected = True
                 self._rescore()
             elif kind == 'calibration' and self.display_mode == 'imageplane':
                 self.user_calibration[index] = [x, y]
+                self.corrected = True
 
     def delete_point(self, kind, index):
         with self.lock:
             if kind == 'dart' and index < len(self.dart_coords):
                 self.dart_coords.pop(index)
+                self.corrected = True
                 self._rescore()
             elif kind == 'calibration':
                 self.user_calibration[index] = -1
+                self.corrected = True
 
     def _rescore(self):
         self.darts = list(self.predict.score(np.array(self.dart_coords))[0]) if self.dart_coords else []
@@ -148,6 +166,9 @@ class DetectionEngine:
         self._track(board_darts)
         self._rescore()
 
+        if not self.ignore_until_clear and self.darts and not self.announced:
+            self.snapshot = (square, calibration, self.H) # frames after the announcement may show hands pulling darts
+
         if not self.ignore_until_clear and self.darts:
             ev = self.evaluate(self.darts)
             if (len(self.darts) == 3 or ev['bust'] or ev['checkout']) and not self.announced:
@@ -185,6 +206,7 @@ class DetectionEngine:
         if self.announced:
             if clear_frames >= REPEAT_THRESHOLD: # darts pulled out: the visit is complete
                 darts = list(self.darts)
+                self._record_visit()
                 self.reset_visit()
                 self._pending.append((self.on_visit, (darts,)))
             return

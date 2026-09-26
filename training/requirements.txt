@@ -1,0 +1,13 @@
+# Training dependencies (Linux / Python 3.14). Install into a separate venv:
+#   uv venv --python 3.14 training/.venv && uv pip install --python training/.venv/bin/python -r training/requirements.txt
+ultralytics>=8.2.5,<9
+torch>=2.3.0,<3
+torchvision>=0.18.0,<1
+numpy>=2,<3
+opencv-python>=4.9.0.80,<5
+pillow>=10.3.0,<13
+pyyaml>=6,<7
+pandas>=2.0.3,<3
+tabulate>=0.9,<1          # pandas to_markdown in accuracy.py
+matplotlib>=3.7.5,<4      # training plots
+scikit-image>=0.21,<1     # experiments/predict_v2.py

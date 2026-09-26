@@ -1,0 +1,15 @@
+# The 10 bundled sample images, only big enough to check that training runs end to end.
+# 'path' is relative to this file (train.py resolves it).
+path: darts
+train: [images/small_sample]
+val: [images/small_sample]
+
+nc: 7
+names:
+  0: 20
+  1: 3
+  2: 11
+  3: 6
+  4: dart
+  5: 9
+  6: 15

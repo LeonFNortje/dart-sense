@@ -10,13 +10,13 @@ A YOLOv8 object detection model was trained to detect dart positions and board c
 
 ## Setup
 1. Clone the repository: `git clone https://github.com/bnww/dart-sense.git`
-2. Create a virtual environment and install the dependencies (Linux, Python 3.14, using [uv](https://docs.astral.sh/uv/)):
+2. Install [uv](https://docs.astral.sh/uv/) and the system packages for score calling (eSpeak NG) and the Tkinter fallback GUI (Tk), e.g. on Arch: `sudo pacman -S uv espeak-ng tk`.
+   Running `./start.sh` creates the virtual environment (`.venv`, Python 3.14) and installs `play/requirements.txt` on first run. To do it by hand:
    ```
    uv venv --python 3.14 .venv
-   uv pip install -r requirements.txt
+   uv pip install -r play/requirements.txt
    source .venv/bin/activate
    ```
-   System packages are also needed for the GUI (Tk) and score calling (eSpeak NG), e.g. on Arch: `sudo pacman -S tk espeak-ng`
 3. Download 'IP Webcam' on your smartphone so that you can stream video from your smartphone camera to the app for processing.
 
 ## Features
@@ -34,25 +34,63 @@ Example images fed into the YOLO Object Detection model. 'YOLO model prediction'
 
 
 ## Usage
-1. Run `python app.py` to launch the app. It opens in its own browser window (Chromium/Chrome if installed); use `python app.py --no-window` to just serve it at http://127.0.0.1:8765/. The original Tkinter interface is still available with `python GUI.py`.
+1. Run `./start.sh` to launch the app. It opens in its own browser window (Chromium/Chrome if installed); use `./start.sh --no-window` to just serve it at http://127.0.0.1:8765/. The original Tkinter interface is still available with `python play/GUI.py`.
 2. Add up to 8 players and configure the match (first to / best of, legs or sets, 301/501/701/custom, straight/double/master in and out). **Important: set the camera address to the IP shown when you start your IP Webcam server.**<br />
 ![app set up screen](images/set_up_screen.png)
-3. Play. Darts are scored automatically: after three darts (or a finish/bust) the score is called, and it's recorded once the darts are pulled out. You can also type a visit total and press Enter, press Enter with an empty box to commit fewer than three detected darts (bounce-outs), undo the last visit (Ctrl+Z), and drag the dart markers on the camera view to correct them.
+3. Play. Turn on **Save training data** on the setup screen to collect images for improving the model while you play (see Training). Darts are scored automatically: after three darts (or a finish/bust) the score is called, and it's recorded once the darts are pulled out. You can also type a visit total and press Enter, press Enter with an empty box to commit fewer than three detected darts (bounce-outs), undo the last visit (Ctrl+Z), and drag the dart markers on the camera view to correct them.
 
-## Files
-A small sample of images and respective labels can be found in the `data` folder.
+## Project layout
+```
+start.sh              sets up .venv and launches the game
+play/                 everything needed to play
+  app.py              web app (Flask) - the main entry point
+  web/                the browser UI (match setup and game screens)
+  engine.py           runs the model on the camera stream and turns detections into visits
+  training_data.py    saves labelled frames of played visits for training
+  match.py            x01 rules: legs/sets, first to/best of, in/out modes
+  get_scores.py       maps dart coordinates to scores via the calibration points
+  video_processing.py camera reading and GPU/CPU selection, plus the Tkinter scoring loop
+  GUI.py, game_logic.py  the original Tkinter app
+  weights.pt          the trained YOLOv8 model
+  requirements.txt
+training/             everything needed to train the model further (own venv and requirements.txt)
+  train.py            fine-tune a model on a dataset
+  download_deepdarts.py  download the DeepDarts D1/D2 images and convert their labels
+  prepare_data.py     split/sharpen/resize a dataset, normalise bounding boxes
+  accuracy.py         accuracy metrics (visit PCS, precision, recall, ...)
+  data/               dataset configs and a 10-image sample (data/darts/images|labels/small_sample)
+  train_optimal.sh    the original training command (Docker, from-scratch run)
+  experiments/        the alternative Hough-line/colour scoring approach (not used by the app)
+```
 
-`prepare_data.py` shows the pre-processing steps taken.
+## Training
+The model can be trained further. The training code is a thin wrapper around [Ultralytics YOLO](https://docs.ultralytics.com/modes/train/). Three sources of data are available:
+- **DeepDarts D1 + D2** (McNally et al. 2021): 16,050 labelled images, about two thirds of the data the model was originally trained on. `download_deepdarts.py` fetches them (~3.4 GB) from the [Dartboard Detection Dataset](https://huggingface.co/datasets/bhabha-kapil/Dartboard-Detection-Dataset) on Hugging Face, where they are already cropped to 800x800. It converts the DeepDarts labels to YOLO format and splits them the same way as the DeepDarts paper, holding out whole sessions for val/test.
+- **Your own board**: frames saved while you play (below). This is the best way to improve accuracy for your own board, darts, lighting and camera angle.
+- The dissertation's own ~8,000 images (D3-D7, see `data/d1_to_d7.yaml`) are not published, apart from the 10-image sample in `data/darts/images/small_sample`.
 
-Training script in `training` folder. This would need altering before attempting to train on your own machine.
+1. Create the training environment. It is separate from the game's, since training needs extra libraries and no web/speech ones:
+   ```
+   uv venv --python 3.14 training/.venv
+   uv pip install --python training/.venv/bin/python -r training/requirements.txt
+   source training/.venv/bin/activate
+   cd training
+   ```
+2. Check that training works: `python train.py --data data/sample.yaml --epochs 1 --batch 4`
+3. Download DeepDarts: `python download_deepdarts.py`. Re-running it resumes an interrupted download.
+4. Collect images from your board (optional, but recommended). Turn on **Save training data** on the match setup screen and play as normal. When a visit is recorded, the app saves the last frame with all of that visit's darts in the board to `training/data/darts/images/collected/`, with a YOLO label in `training/data/darts/labels/collected/`. The label holds the calibration points and the final dart positions, including any corrections you made. The game screen shows how many frames have been saved.
+   - Visits where you dragged, added or deleted a marker are always saved (`web_..._corrected.jpg`). They show the model its own mistakes, so they are the most valuable.
+   - Visits nobody touched mostly repeat what the model already knows, so only every 5th is saved (`web_..._auto.jpg`).
+   - Visits entered by typing a total are not saved, because they don't say where the darts landed.
 
-`accuracy.py` computes the accuracy metrics based on the input predictions and the ground truth data.
+   Untouched visits are labelled with the model's own detections, so a mistake nobody noticed would be learned as correct. Look through the images before training, and fix labels with [LabelImg](https://github.com/HumanSignal/labelImg) if needed (`data/darts/classes.txt` has the class names). The **Save data** button in the Tkinter app (`python play/GUI.py`) saves to the same folders. Then split them into train/val/test with `python prepare_data.py split collected`, and add `images/collected/train` and `images/collected/val` to the lists in `data/deepdarts.yaml`. Mixing them with DeepDarts keeps the model from forgetting other boards.
+5. Fine-tune from the current model and install the result into the game:
+   ```
+   python train.py --data data/deepdarts.yaml --epochs 50 --install
+   ```
+   This trains at 800x800 with the tuned hyperparameters. Runs are saved in `training/runs/`, and `--install` copies the best weights to `play/weights.pt`, keeping the old model as `play/weights.previous.pt`. To compare models on the held-out sessions, run `yolo val model=<weights> data=runs/datasets/<run name>/dataset.yaml split=test imgsz=800`. `--weights yolov8n.pt` trains from scratch instead. See `python train.py --help` for the other options.
 
-`get_scores.py` has all the logic for computing the score for a dart based on its coordinates.
-
-`game_logic` sets the scoring, turn-taking logic and rules for a game of darts with multiple players.
-
-`GUI.py` is the Tkinter app. It handles the graphics. This ties closely into `video_processing` which processes every frame of the video and extracts the best possible prediction for the current darts score.
+Classes: `0: 20, 1: 3, 2: 11, 3: 6` are the calibration points (the top left corner of the double segment of those numbers), `4: dart` is a dart tip, and `5: 9, 6: 15` are extra calibration points. Boxes are 0.025 x 0.025 (`python prepare_data.py boxes <dataset>` sets them).
 
 ## Methodology
 ### Data Collection and Pre-Processing

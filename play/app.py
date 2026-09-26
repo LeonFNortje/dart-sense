@@ -96,8 +96,10 @@ class Session:
         visit = self.engine.visit_state() if self.engine else None
         if game and visit:
             visit['evaluation'] = self.match.evaluate(visit['darts']) if visit['darts'] else None
+        recorder = self.engine.recorder if self.engine else None
         return {'game': game, 'live': live, 'visit': visit, 'message': message,
-                'view': self.engine.display_mode if self.engine else 'imageplane'}
+                'view': self.engine.display_mode if self.engine else 'imageplane',
+                'training': dict(recorder.saved) if recorder and recorder.enabled else None}
 
 
 session = Session()
@@ -157,6 +159,7 @@ def start():
         return jsonify(error=str(e) or 'invalid settings'), 400
     session.speaker.enabled = bool(cfg.get('call_scores', True))
     engine = get_engine()
+    engine.recorder.enabled = bool(cfg.get('save_training', False))
     with session.lock:
         session.match = match
         session.message = None

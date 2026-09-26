@@ -8,6 +8,8 @@ import threading
 import time
 import torch
 
+WEIGHTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'weights.pt') # the model the game runs
+
 def _select_device(min_free_mb=1024):
     # DART_SENSE_DEVICE overrides auto-selection, e.g. "cpu" or "cuda:0"
     override = os.environ.get('DART_SENSE_DEVICE')
@@ -61,7 +63,7 @@ class LatestFrameReader:
 
 
 class VideoProcessing:
-    def __init__(self, model_dir="weights.pt"):
+    def __init__(self, model_dir=WEIGHTS):
         self.model = YOLO(model_dir)
         self.device = _select_device()
         print(f'Running model on {self.device}')

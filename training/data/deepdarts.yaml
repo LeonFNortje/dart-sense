@@ -1,0 +1,17 @@
+# DeepDarts D1 + D2 (McNally et al. 2021), downloaded with: python download_deepdarts.py
+# Official split: whole capture sessions are held out for val/test.
+# Add your own data (e.g. images/collected/train) to the lists to fine-tune on both.
+path: darts
+train: [images/deepdarts_d1/train, images/deepdarts_d2/train]
+val: [images/deepdarts_d1/val, images/deepdarts_d2/val]
+test: [images/deepdarts_d1/test, images/deepdarts_d2/test]
+
+nc: 7
+names:
+  0: 20
+  1: 3
+  2: 11
+  3: 6
+  4: dart
+  5: 9
+  6: 15
