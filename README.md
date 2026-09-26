@@ -10,7 +10,13 @@ A YOLOv8 object detection model was trained to detect dart positions and board c
 
 ## Setup
 1. Clone the repository: `git clone https://github.com/bnww/dart-sense.git`
-2. Install the required dependencies: `npm install requirements.txt`
+2. Create a virtual environment and install the dependencies (Linux, Python 3.14, using [uv](https://docs.astral.sh/uv/)):
+   ```
+   uv venv --python 3.14 .venv
+   uv pip install -r requirements.txt
+   source .venv/bin/activate
+   ```
+   System packages are also needed for the GUI (Tk) and score calling (eSpeak NG), e.g. on Arch: `sudo pacman -S tk espeak-ng`
 3. Download 'IP Webcam' on your smartphone so that you can stream video from your smartphone camera to the app for processing.
 
 ## Features

@@ -1,12 +1,70 @@
 from ultralytics import YOLO
 from get_scores import GetScores
 
+import cv2
 import numpy as np
+import os
+import threading
 import time
+import torch
+
+def _select_device(min_free_mb=1024):
+    # DART_SENSE_DEVICE overrides auto-selection, e.g. "cpu" or "cuda:0"
+    override = os.environ.get('DART_SENSE_DEVICE')
+    if override:
+        return override
+    if torch.cuda.is_available():
+        try:
+            free, _ = torch.cuda.mem_get_info()
+            if free >= min_free_mb * 1024**2:
+                return 'cuda:0'
+            print(f'Only {free // 1024**2} MiB free on GPU, falling back to CPU')
+        except RuntimeError as e:
+            print(f'CUDA unavailable ({e}), falling back to CPU')
+    return 'cpu'
+
+class LatestFrameReader:
+    # reads the stream on a background thread and keeps only the newest frame, so inference never lags behind
+    def __init__(self, url):
+        self.cap = cv2.VideoCapture(url)
+        if not self.cap.isOpened():
+            raise ConnectionError(f'Failed to open {url}')
+        self.frame = None
+        self.stopped = False
+        self.new_frame = threading.Event()
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        while not self.stopped:
+            ok, frame = self.cap.read()
+            if not ok:
+                self.stopped = True
+                break
+            self.frame = frame
+            self.new_frame.set()
+        self.new_frame.set()
+        self.cap.release()
+
+    def frames(self):
+        # yields None when no new frame arrives within the timeout, so the caller can keep its GUI responsive
+        while True:
+            if not self.new_frame.wait(timeout=0.2):
+                yield None
+                continue
+            self.new_frame.clear()
+            if self.stopped:
+                return
+            yield self.frame
+
+    def stop(self):
+        self.stopped = True
+
 
 class VideoProcessing:
     def __init__(self, model_dir="weights.pt"):
         self.model = YOLO(model_dir)
+        self.device = _select_device()
+        print(f'Running model on {self.device}')
         self.predict = GetScores(model_dir)
     
     def _distance(self, coord1, coord2):
@@ -120,15 +178,31 @@ class VideoProcessing:
         prev_frame_time = 0
         new_frame_time = 0
 
-        results = self.model('http://'+source+'/video', stream=True, verbose=False)
+        # the model is run on the centre square of each frame (it was trained on square 800px images)
+        # rather than the full frame, where a wide-angle stream leaves the board too small to detect
+        reader = LatestFrameReader('http://'+source+'/video')
 
-        for result in results:
-
+        for frame in reader.frames():
             if self.game_over:
                 break
-            
+            if frame is None: # stream stalled
+                GUI.root.update()
+                continue
+            h, w = frame.shape[:2]
+            s = min(h, w)
+            square = frame[(h-s)//2:(h-s)//2+s, (w-s)//2:(w-s)//2+s]
+            result = self.model(square, imgsz=800, verbose=False, device=self.device)[0]
+
+            # use the stream's actual (width, height) rather than the assumed resolution
+            frame_resolution = np.array(result.orig_shape[::-1])
+            if not np.array_equal(frame_resolution, resolution):
+                resolution = frame_resolution
+                crop_size = min(resolution)
+                crop_start = resolution/2 - crop_size/2
+
             calibration_coords, dart_coords = self.predict.process_yolo_output(result)
             if np.count_nonzero(calibration_coords == -1)/2 > 2:
+                GUI._display_raw_frame(result, crop_start, crop_size) # show the live feed while the board isn't in view
                 continue
             calibration_coords, dart_coords = self._adjust_coords(calibration_coords, dart_coords, resolution, crop_start, crop_size)
             calibration_coords = np.where(self.user_calibration == -1, calibration_coords, self.user_calibration)
@@ -150,6 +224,7 @@ class VideoProcessing:
             
             GUI._display_graphics(result, H_matrix, crop_start, crop_size, calibration_coords, dart_coords, score, remaining, fps)
 
+        reader.stop()
         print(f'Number of user corrections: {self.num_corrections}')
         print(f'Number of darts thrown: {np.sum(self.scorer.num_dart_history)}')
 

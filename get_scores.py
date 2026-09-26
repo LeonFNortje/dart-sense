@@ -2,8 +2,9 @@ import cv2
 import numpy as np
 
 class GetScores():
-    def __init__(self, model_dir="weights.pt"):
+    def __init__(self, model_dir="weights.pt", calibration_conf=0.7):
         self.model_dir = model_dir
+        self.calibration_conf = calibration_conf # minimum confidence to accept a calibration point
 
         self.class_names = {0: '20', 1: '3', 2: '11', 3: '6', 4: 'dart'}
         
@@ -55,9 +56,10 @@ class GetScores():
     def process_yolo_output(self, output):
         calibration_coords = -np.ones((6, 2))
         dart_coords = []
-        classes = output.boxes.cls
-        boxes = output.boxes.xywhn
-        conf = output.boxes.conf
+        # copy to host memory so this works whether the model ran on CPU or GPU
+        classes = output.boxes.cls.cpu().numpy()
+        boxes = output.boxes.xywhn.cpu().numpy()
+        conf = output.boxes.conf.cpu().numpy()
         
         for i in range(len(classes)):
             if classes[i] == 4 and len(dart_coords) < 3:
@@ -65,7 +67,7 @@ class GetScores():
             elif classes[i] == 4:
                 continue
             else:
-                if conf[i] < 0.85:
+                if conf[i] < self.calibration_conf:
                     continue
                 calibration_i = int(classes[i].item())
                 if calibration_i > 4:

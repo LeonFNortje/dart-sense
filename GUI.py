@@ -19,8 +19,29 @@ class GUI:
         
         self.root = Tk()
         self.root.title("Dart Sense")
+        try:
+            # X11 only: marks the window as a dialog so tiling WMs (e.g. Hyprland) float it instead of tiling it
+            self.root.attributes('-type', 'dialog')
+        except TclError:
+            pass
         self.root.columnconfigure(0, weight=1) # columns and rows are resized to fill window
         self.root.rowconfigure(0, weight=1)        
+        self.game_running = False
+        self.root.protocol("WM_DELETE_WINDOW", self.quit)
+
+    def quit(self):
+        # while a game is running, stop the video loop first; the window is closed once it has exited
+        if self.game_running:
+            self.video_processing.game_over = True
+            self.quit_requested = True
+        else:
+            self.root.destroy()
+
+    def _fit_window(self):
+        # pin the window to the current screen's natural size; an explicit geometry stops the window
+        # collapsing (and floating WMs such as Hyprland keeping it at 1x1) while frames are swapped
+        self.root.update_idletasks()
+        self.root.geometry(f'{self.root.winfo_reqwidth()}x{self.root.winfo_reqheight()}')
 
     def launch(self):
         self.menu_frame = ttk.Frame(self.root, padding="3 3 12 12")
@@ -57,7 +78,7 @@ class GUI:
 
         # create widget for ip webcam source
         ttk.Label(self.menu_frame, text="Webcam IP:").grid(column=1, row=6, sticky=W)
-        self.ip = StringVar(self.menu_frame, "192.168.0.56:8080")
+        self.ip = StringVar(self.menu_frame, "192.168.0.8:8080")
         ip_entry = ttk.Entry(self.menu_frame, width=15, textvariable=self.ip)
         ip_entry.grid(column=2, row=6, sticky=(W, E))
 
@@ -71,7 +92,13 @@ class GUI:
         def _start_game():
             self.scorer = GameLogic(self.game_type.get(), [player.get() for player in self.player_names], self.starting_score.get(), self.legs.get(), self.call_scores.get())
             self._game_screen()
-            self.video_processing.start(self, self.ip.get(), self.scorer, np.array((1200, 1600)))
+            self.game_running, self.quit_requested = True, False
+            try:
+                self.video_processing.start(self, self.ip.get(), self.scorer, np.array((1200, 1600)))
+            finally:
+                self.game_running = False
+            if self.quit_requested:
+                self.root.destroy()
 
         # use number of players to create entry boxes for player names
         def update_player_names():
@@ -93,12 +120,14 @@ class GUI:
             # create button to start game
             start_game_button = ttk.Button(self.player_frame, text="Start", command=_start_game)
             start_game_button.grid(column=2, row=2+self.num_players.get(), sticky=W, columnspan=2)
+            self._fit_window()
             self.root.bind("<Return>", lambda e: _start_game())
 
         # create button to allow user to add player names
         add_player_names_button = ttk.Button(self.menu_frame, text="Next", command=update_player_names)
         add_player_names_button.grid(column=2, row=8, sticky=W, columnspan=2)
         self.root.bind("<Return>", lambda e: add_player_names_button.invoke())
+        self._fit_window()
         self.root.mainloop()
     
 
@@ -193,8 +222,11 @@ class GUI:
         # button for saving image and labels in YOLO format
         save_button = ttk.Button(self.mainframe, text="Save data", underline=0, command=self.save_data)
         save_button.grid(column=6, row=3, sticky=W)
+
+        quit_button = ttk.Button(self.mainframe, text="Quit", command=self.quit)
+        quit_button.grid(column=6, row=4, sticky=W)
         # assign key bindings for buttons
-        self.root.bind('<Escape>', lambda e: self.root.quit())
+        self.root.bind('<Escape>', lambda e: self.quit())
         self.root.bind('d', lambda e: transform_button.invoke() if self.display_type.get() == 'imageplane' else original_button.invoke() if self.display_type.get() == 'live' else live_button.invoke())
         self.root.bind('p', lambda e: prediction_button.invoke())
         self.root.bind('a', lambda e: add_button.invoke())
@@ -209,6 +241,7 @@ class GUI:
         self.root.bind("<Left>", self.on_arrow_key)
         self.root.bind("<Right>", self.on_arrow_key)
         self.root.bind("<Delete>", self.delete_object)
+        self._fit_window()
 
     def _get_segment_coords(self):
         # draw outline of a dart board to overlay on image
@@ -392,6 +425,18 @@ class GUI:
             self.avg_labels[i].configure(text=int(np.round(self.scorer.averages[i])), font=font_)
 
 
+    def _display_raw_frame(self, result, crop_start, crop_size):
+        # show the unprocessed camera feed while too few calibration points are detected, so the camera can be aimed
+        img = result.orig_img[int(crop_start[1]):int(crop_start[1]+crop_size), int(crop_start[0]):int(crop_start[0]+crop_size)]
+        img = cv2.resize(img, (self.display_size, self.display_size))
+        self.canvas.delete('all')
+        self.raw_frame_img = ImageTk.PhotoImage(image=Image.fromarray(img[:,:,::-1])) # keep a reference so Tk doesn't lose the image
+        self.canvas.create_image(0, 0, image=self.raw_frame_img, anchor=NW)
+        status_text = self.canvas.create_text(5, self.display_size-15, text="Board not detected - point the camera at the board", fill="black", font=self.graphics_font, anchor="w")
+        border = self.canvas.create_rectangle(self.canvas.bbox(status_text), fill="white")
+        self.canvas.tag_lower(border, status_text)
+        self.root.update()
+
     def _display_graphics(self, result, H_matrix, crop_start, crop_size, calibration_coords, dart_coords, score, remaining, fps):
         transformed_dart_coords = np.array(self.video_processing.dart_coords_in_visit)
         self.H_matrix = H_matrix
@@ -458,7 +503,7 @@ class GUI:
                 self.canvas.tag_lower(border, inference_text)
 
                 if self.display_labels.get():
-                    box_coords = np.array(result.boxes.xywh[:,0:2])
+                    box_coords = result.boxes.xywh[:,0:2].cpu().numpy()
                     box_coords -= crop_start # adjust pixel coords for square crop
                     box_coords /= self.crop_size # convert back to normalised coords
                     box_coords = (np.round(box_coords*self.display_size)).astype(int)
