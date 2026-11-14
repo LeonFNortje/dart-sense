@@ -139,6 +139,7 @@ $('#start-game').addEventListener('click', async () => {
 let current = null; // latest state from the server
 let lastGameJson = '';
 let lastMessageId = null;
+let lastWinner; // undefined until the first state, so reloading a finished match doesn't celebrate again
 let selected = null; // {kind, index} of the overlay point being edited
 let dragging = false;
 
@@ -302,7 +303,7 @@ function render(state) {
   current = state;
   renderTraining(state.training);
   const game = state.game;
-  if (!game) { if (!$('#game').classList.contains('hidden')) showSetup(); return; }
+  if (!game) { stopCelebration(); lastWinner = null; if (!$('#game').classList.contains('hidden')) showSetup(); return; }
   if ($('#game').classList.contains('hidden')) showGame();
 
   const gameJson = JSON.stringify(game);
@@ -314,6 +315,9 @@ function render(state) {
     $('#turn-banner').textContent = game.winner !== null ? `${name} wins the match!` : `${name}'s turn to throw!`;
     $('#score-input').disabled = game.winner !== null;
     $('#undo').disabled = !game.can_undo;
+    if (game.winner !== null && lastWinner === null) celebrate(name);
+    if (game.winner === null) stopCelebration();
+    lastWinner = game.winner;
   }
   renderDetected(state);
   renderOverlay(state);
@@ -322,7 +326,7 @@ function render(state) {
   if (state.message && state.message.id !== lastMessageId) {
     const first = lastMessageId === null && lastGameJson === '';
     lastMessageId = state.message.id;
-    if (!first) showToast(state.message.text);
+    if (!first && !celebration) showToast(state.message.text);
   }
 }
 
@@ -333,6 +337,128 @@ function showToast(text) {
   t.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 3500);
+}
+
+/* ---- winner celebration ---- */
+const CELEBRATION_MS = 5500;
+const CONFETTI_COLOURS = ['#ff5a36', '#ff9a1f', '#2ed47a', '#ffd23f', '#3bb8d6', '#15201e', '#ffffff'];
+const CONFETTI_SHAPES = ['ribbon', 'ribbon', 'ribbon', 'dot', 'star', 'board', 'flight'];
+let celebration = null; // {timers, frame} while one is running
+
+function stopCelebration() {
+  if (!celebration) return;
+  celebration.timers.forEach(clearTimeout);
+  cancelAnimationFrame(celebration.frame);
+  celebration = null;
+  $('#confetti').classList.add('hidden');
+  $('#winner-splash').classList.add('hidden');
+  $('#winner-splash').classList.remove('leaving');
+}
+
+function celebrate(name) {
+  stopCelebration();
+  const label = $('#winner-name');
+  const letters = [...name];
+  label.style.fontSize = `min(${Math.min(24, 130 / letters.length)}vw, 36vh)`;
+  label.replaceChildren(...letters.map((letter, i) => {
+    const span = document.createElement('span');
+    span.textContent = letter;
+    span.style.animationDelay = `${i * 70}ms`;
+    return span;
+  }));
+  $('#winner-splash').classList.remove('hidden');
+
+  const run = celebration = { timers: [], frame: 0 };
+  run.timers.push(setTimeout(() => $('#winner-splash').classList.add('leaving'), CELEBRATION_MS - 500));
+  run.timers.push(setTimeout(stopCelebration, CELEBRATION_MS));
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) launchConfetti(run);
+}
+
+function launchConfetti(run) {
+  const canvas = $('#confetti');
+  canvas.classList.remove('hidden');
+  const scale = window.devicePixelRatio || 1;
+  const w = canvas.width = window.innerWidth * scale;
+  const h = canvas.height = window.innerHeight * scale;
+  const ctx = canvas.getContext('2d');
+  const pieces = [];
+
+  const burst = (x, y, count, power, angle = 0, spread = Math.PI * 2) => {
+    for (let i = 0; i < count; i++) {
+      const dir = angle + (Math.random() - 0.5) * spread;
+      const speed = power * scale * (0.3 + Math.random() * 0.7);
+      pieces.push({
+        x, y, vx: Math.cos(dir) * speed, vy: Math.sin(dir) * speed,
+        size: (7 + Math.random() * 9) * scale, rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 0.35,
+        flutter: Math.random() * 6.3,
+        colour: CONFETTI_COLOURS[Math.floor(Math.random() * CONFETTI_COLOURS.length)],
+        shape: CONFETTI_SHAPES[Math.floor(Math.random() * CONFETTI_SHAPES.length)],
+      });
+    }
+  };
+  // an explosion behind the name, cannons from both bottom corners, then fireworks across the top
+  burst(w / 2, h / 2, 170, 30);
+  run.timers.push(setTimeout(() => { burst(0, h, 90, 34, -Math.PI / 3, 0.7); burst(w, h, 90, 34, -Math.PI * 2 / 3, 0.7); }, 300));
+  run.timers.push(setTimeout(() => { burst(0, h, 70, 30, -Math.PI / 3, 0.9); burst(w, h, 70, 30, -Math.PI * 2 / 3, 0.9); }, 800));
+  for (let t = 600; t <= 2800; t += 440) {
+    run.timers.push(setTimeout(() => burst(w * (0.15 + Math.random() * 0.7), h * (0.1 + Math.random() * 0.35), 50, 16), t));
+  }
+
+  const draw = (p) => {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.scale(1, Math.abs(Math.cos(p.flutter)) * 0.8 + 0.2); // tumbling in the air
+    ctx.fillStyle = ctx.strokeStyle = p.colour;
+    ctx.lineWidth = p.size / 5;
+    const r = p.size / 2;
+    ctx.beginPath();
+    if (p.shape === 'ribbon') {
+      ctx.fillRect(-r / 2, -r * 1.4, r, r * 2.8);
+    } else if (p.shape === 'dot') {
+      ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.shape === 'star') {
+      for (let i = 0; i < 10; i++) {
+        const reach = i % 2 ? r * 0.45 : r * 1.2;
+        ctx.lineTo(Math.cos(i * Math.PI / 5) * reach, Math.sin(i * Math.PI / 5) * reach);
+      }
+      ctx.fill();
+    } else if (p.shape === 'board') { // a little dartboard
+      ctx.arc(0, 0, r * 1.1, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    } else { // a dart flight
+      ctx.moveTo(0, -r * 1.3);
+      ctx.lineTo(r, r);
+      ctx.lineTo(0, r * 0.4);
+      ctx.lineTo(-r, r);
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  let last = performance.now();
+  const started = last;
+  const frame = (now) => {
+    const dt = Math.min((now - last) / 16.7, 3); // 1 at 60fps, whatever the refresh rate
+    last = now;
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalAlpha = Math.min(1, (CELEBRATION_MS - (now - started)) / 800);
+    for (const p of pieces) {
+      p.vx *= 0.97 ** dt;
+      p.vy = p.vy * 0.97 ** dt + 0.32 * scale * dt;
+      p.x += (p.vx + Math.sin(p.flutter) * scale) * dt;
+      p.y += p.vy * dt;
+      p.rot += p.spin * dt;
+      p.flutter += 0.12 * dt;
+      if (p.y < h + 40) draw(p);
+    }
+    run.frame = requestAnimationFrame(frame);
+  };
+  run.frame = requestAnimationFrame(frame);
 }
 
 /* ---- score entry ---- */

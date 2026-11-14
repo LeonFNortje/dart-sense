@@ -30,7 +30,7 @@ class Match:
     """x01 match: legs or sets, first to / best of, straight/double/master in and out."""
 
     def __init__(self, players, start_score=501, target=3, unit='legs', match_format='first_to',
-                 in_mode='straight', out_mode='double', legs_per_set=3):
+                 in_mode='straight', out_mode='double', legs_per_set=3, first_player=0):
         assert 1 <= len(players) <= 8, 'between 1 and 8 players'
         assert unit in ('legs', 'sets') and match_format in ('first_to', 'best_of')
         assert in_mode in IN_MODES and out_mode in OUT_MODES
@@ -48,11 +48,11 @@ class Match:
         self.sets_won = [0] * self.n
         self.legs_won = [0] * self.n # legs in the current set (or in the match, when playing legs)
         self.set_no, self.leg_no = 1, 1
-        self.leg_starter = 0
+        self.leg_starter = first_player
         self.history = [] # one dict per visit, whole match
         self.winner = None
         self._undo = []
-        self._start_leg(0)
+        self._start_leg(first_player)
 
     def _start_leg(self, starter):
         self.leg_starter = starter

@@ -231,3 +231,25 @@ dialog { border: 0; border-radius: 22px; padding: 28px; box-shadow: 0 20px 60px 
 dialog::backdrop { background: rgba(21, 32, 30, .35); }
 .dialog-buttons { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
 .game-over-actions { display: flex; gap: 12px; }
+
+/* winner celebration: never takes clicks, so New match stays usable underneath */
+.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 51; pointer-events: none; }
+.winner-splash {
+  position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle, rgba(255, 255, 255, .92) 0, rgba(255, 255, 255, .6) 45%, rgba(255, 255, 255, 0) 75%);
+  animation: winner-in .35s ease-out;
+}
+.winner-splash.leaving { opacity: 0; transition: opacity .5s; }
+.winner-name { font-family: var(--display); color: var(--red); line-height: 1; white-space: pre; text-shadow: 0 6px 0 var(--ink), 0 12px 24px rgba(0, 0, 0, .3); }
+.winner-name span { display: inline-block; animation: winner-jump .8s ease-in-out infinite; }
+.winner-sub { font-family: var(--display); color: var(--ink); font-size: clamp(32px, 6vh, 72px); letter-spacing: 2px; margin-top: 2vh; }
+@keyframes winner-in { from { opacity: 0; transform: scale(.6); } }
+@keyframes winner-jump {
+  0%, 100% { transform: translateY(0) scale(1.08, .92); }
+  45% { transform: translateY(-.45em) rotate(-4deg) scale(.95, 1.08); }
+  60% { transform: translateY(-.45em) rotate(4deg) scale(.95, 1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .winner-splash, .winner-name span { animation: none; }
+}

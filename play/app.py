@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import queue
+import random
 import shutil
 import subprocess
 import threading
@@ -19,6 +20,12 @@ from match import Match
 logging.getLogger('werkzeug').setLevel(logging.WARNING) # no per-request log lines
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 app = Flask(__name__, static_folder=None)
+VOICE = 'gmw/en+Annie' # espeak-ng female variant
+CALL_SCORE_BELOW = 120 # also call what the next player needs when they are this close
+LEADER_AFTER_TURNS = 6 # start calling the leader after this many turns in a leg, across all players
+BUST_CALL = 'Oh no - BUST!! that does not count!'
+TURN_CALL_PAUSE = 1 # seconds between the phrases of a next player call
+NAME_REPEAT_PAUSE = 2 # seconds before the name is called the last time
 
 
 class Speaker:
@@ -32,6 +39,14 @@ class Speaker:
         if self.enabled:
             self.queue.put(text)
 
+    def pause(self, seconds):
+        if self.enabled:
+            self.queue.put(seconds)
+
+    def clear(self):
+        while not self.queue.empty():
+            self.queue.get_nowait()
+
     def _run(self):
         try:
             import pyttsx3
@@ -39,9 +54,17 @@ class Speaker:
         except Exception as e:
             print(f'Score calling disabled: {e}')
             return
+        try:
+            engine.setProperty('voice', VOICE)
+        except Exception as e: # not every TTS backend has this voice, keep its default
+            print(f'Using default voice: {e}')
         while True:
-            engine.say(self.queue.get())
-            engine.runAndWait()
+            item = self.queue.get()
+            if isinstance(item, str):
+                engine.say(item)
+                engine.runAndWait()
+            else:
+                time.sleep(item)
 
 
 class Session:
@@ -63,11 +86,43 @@ class Session:
         m = self.match
         return m.evaluate(darts) if m else {'bust': False, 'checkout': False}
 
+    def call_score(self, ev):
+        if ev['bust']:
+            self.speaker.say(BUST_CALL)
+            self.speaker.say(BUST_CALL)
+        else:
+            self.speaker.say('Game shot' if ev['checkout'] else str(ev['scored']))
+
     def on_announce(self, darts):
-        ev = self.evaluate(darts)
-        self.speaker.say('No score' if ev['bust'] else 'Game shot' if ev['checkout'] else str(ev['scored']))
+        self.call_score(self.evaluate(darts))
         with self.lock:
             self.changed()
+
+    def leaders(self):
+        m = self.match
+        turns = sum(v['set'] == m.set_no and v['leg'] == m.leg_no for v in m.history)
+        lowest = [name for name, score in zip(m.players, m.scores) if score == min(m.scores)]
+        return lowest if turns >= LEADER_AFTER_TURNS and len(lowest) < m.n else [] # nobody leads if everyone is level
+
+    def call_next_player(self):
+        m = self.match
+        name, score = m.players[m.current], m.scores[m.current]
+        leaders = self.leaders()
+        first, last = name, name
+        if leaders == [name]:
+            first = f"{name} - you're the leader at {score}"
+        elif leaders:
+            lead = 'is the leader' if len(leaders) == 1 else 'are tied for the lead'
+            first = f"{' and '.join(leaders)} {lead} at {min(m.scores)}, {name}"
+        if score < CALL_SCORE_BELOW and leaders != [name]:
+            last = f'{name}, {score} left to score'
+        self.speaker.say(first)
+        self.speaker.pause(TURN_CALL_PAUSE)
+        self.speaker.say('next turn')
+        self.speaker.pause(TURN_CALL_PAUSE)
+        self.speaker.say(name)
+        self.speaker.pause(NAME_REPEAT_PAUSE)
+        self.speaker.say(last)
 
     def on_visit(self, darts, manual_points=None):
         with self.lock:
@@ -76,7 +131,7 @@ class Session:
             name = self.match.players[self.match.current]
             visit = self.match.visit_from_darts(darts) if manual_points is None else self.match.visit_from_total(manual_points)
             if manual_points is not None:
-                self.speaker.say('No score' if visit['bust'] else 'Game shot' if visit['checkout'] else str(visit['scored']))
+                self.call_score(visit)
             event = visit['event']
             if event == 'match':
                 self.speaker.say(f'and the match. {name} wins')
@@ -86,6 +141,7 @@ class Session:
                 self.speaker.say(f'and the {event}. {starter} to throw first')
                 self.changed(f'{name} wins the {event}!')
             else:
+                self.call_next_player()
                 self.changed()
 
     def state(self):
@@ -154,7 +210,8 @@ def start():
     try:
         match = Match([p.strip() or f'Player {i+1}' for i, p in enumerate(cfg['players'])],
                       start_score=int(cfg['start_score']), target=int(cfg['target']), unit=cfg['unit'],
-                      match_format=cfg['format'], in_mode=cfg['in_mode'], out_mode=cfg['out_mode'])
+                      match_format=cfg['format'], in_mode=cfg['in_mode'], out_mode=cfg['out_mode'],
+                      first_player=random.randrange(len(cfg['players'])))
     except (AssertionError, KeyError, ValueError) as e:
         return jsonify(error=str(e) or 'invalid settings'), 400
     session.speaker.enabled = bool(cfg.get('call_scores', True))
@@ -166,7 +223,7 @@ def start():
         session.changed()
     engine.reset_visit()
     engine.start(cfg['camera'], session.evaluate, session.on_announce, session.on_visit)
-    session.speaker.say(f'{match.players[0]} to throw first. Game on')
+    session.speaker.say(f'{match.players[match.current]} to throw first. Game on')
     return jsonify(ok=True)
 
 
@@ -206,6 +263,8 @@ def commit():
 def undo():
     with session.lock:
         undone = session.match.undo() if session.match else False
+        if undone:
+            session.speaker.clear() # the queued calls were for the turn that was just undone
         session.changed()
     session.engine.reset_visit(wait_for_clear=True)
     return jsonify(ok=undone)
